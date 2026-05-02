@@ -10,9 +10,14 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Log ALL cookies to see what NextAuth actually sets
-  const cookieNames = request.cookies.getAll().map(c => c.name);
-  console.log("[Middleware] All cookies found:", cookieNames);
+  // Just check if session cookie exists - JWT verification happens in server components
+  const sessionCookie = request.cookies.get("authjs.session-token");
+
+  if (!sessionCookie?.value) {
+    const loginUrl = new URL("/login", request.url);
+    loginUrl.searchParams.set("callbackUrl", pathname);
+    return NextResponse.redirect(loginUrl);
+  }
 
   return NextResponse.next();
 }

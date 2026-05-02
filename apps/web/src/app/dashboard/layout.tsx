@@ -1,47 +1,23 @@
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
-import { jwtVerify } from "jose";
+import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { TopBar } from "@/components/dashboard/topbar";
-
-async function getSessionUserId(): Promise<string | null> {
-  const cookieStore = cookies();
-  const possibleNames = [
-    "authjs.session-token",
-    "__Secure-authjs.session-token",
-    "next-auth.session-token",
-    "__Secure-next-auth.session-token",
-  ];
-
-  for (const name of possibleNames) {
-    const cookie = cookieStore.get(name);
-    if (!cookie?.value) continue;
-
-    try {
-      const secret = new TextEncoder().encode(process.env.NEXTAUTH_SECRET);
-      const { payload } = await jwtVerify(cookie.value, secret);
-      return payload.sub as string | null;
-    } catch {
-      continue;
-    }
-  }
-  return null;
-}
+import { cookies } from "next/headers";
 
 export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const userId = await getSessionUserId();
+  const session = await auth();
 
-  if (!userId) {
+  if (!session?.user?.id) {
     redirect("/login");
   }
 
   const user = await prisma.user.findUnique({
-    where: { id: userId },
+    where: { id: session.user.id },
     include: {
       workspaces: {
         include: {
