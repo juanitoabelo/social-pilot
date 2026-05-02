@@ -16,14 +16,20 @@ async function verifySession(request: NextRequest) {
     const cookie = request.cookies.get(name);
     if (!cookie?.value) continue;
 
+    console.log(`[Middleware] Found cookie: ${name} (first 20 chars: ${cookie.value.substring(0, 20)}...)`);
+
     try {
       const secret = new TextEncoder().encode(process.env.NEXTAUTH_SECRET);
       const { payload } = await jwtVerify(cookie.value, secret);
+      console.log(`[Middleware] Session verified for user: ${payload.sub}`);
       return payload;
-    } catch {
+    } catch (err) {
+      console.log(`[Middleware] Failed to verify cookie ${name}:`, err);
       continue;
     }
   }
+  
+  console.log("[Middleware] No valid session cookie found");
   return null;
 }
 
