@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Users, Link2, Palette, Plus, X, Trash2, ChevronDown } from "lucide-react";
+import { useState, useEffect } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Users, Link2, Palette, Plus, X, Trash2, ChevronDown, ExternalLink, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 
 interface Member {
@@ -23,15 +23,9 @@ interface Workspace {
     id: string;
     platform: string;
     platform_username: string | null;
+    connected_at: string;
   }>;
   members: Member[];
-}
-
-async function fetchMembers(workspaceId: string): Promise<Member[]> {
-  const res = await fetch(`/api/workspaces/${workspaceId}/members`);
-  const data = await res.json();
-  if (data.error) throw new Error(data.error.message);
-  return data.data || [];
 }
 
 async function inviteMember(workspaceId: string, email: string, role: string) {
@@ -67,18 +61,57 @@ async function changeRole(workspaceId: string, memberId: string, role: string) {
   return data.data;
 }
 
+async function disconnectPlatform(workspaceId: string, platform: string) {
+  const res = await fetch(
+    `/api/platforms?workspaceId=${workspaceId}&platform=${platform}`,
+    { method: "DELETE" }
+  );
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message);
+  return data.data;
+}
+
+const platforms = [
+  {
+    key: "instagram",
+    name: "Instagram",
+    color: "#E1306C",
+    description: "Connect your Instagram Business account to publish posts automatically",
+    requirements: ["Instagram Business account", "Linked to a Facebook Page"],
+  },
+  {
+    key: "facebook",
+    name: "Facebook",
+    color: "#1877F2",
+    description: "Connect your Facebook Page to publish posts and track engagement",
+    requirements: ["Facebook Page with admin access"],
+  },
+];
+
 export default function SettingsClient({ workspace }: { workspace: Workspace }) {
   const queryClient = useQueryClient();
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("member");
   const [roleDropdownOpen, setRoleDropdownOpen] = useState<string | null>(null);
+  const [disconnecting, setDisconnecting] = useState<string | null>(null);
 
-  const { data: members } = useQuery({
-    queryKey: ["members", workspace.id],
-    queryFn: () => fetchMembers(workspace.id),
-    initialData: workspace.members,
-  });
+  const connections = workspace.platform_connections || [];
+  const connectedPlatforms = new Set(connections.map((c) => c.platform));
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("connected") === "true") {
+      toast.success("Platform connected successfully");
+      queryClient.invalidateQueries({ queryKey: ["settings", workspace.id] });
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+    const error = params.get("error");
+    if (error) {
+      toast.error(`Connection failed: ${error.replace(/_/g, " ")}`);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, [queryClient, workspace.id]);
 
   const inviteMutation = useMutation({
     mutationFn: ({ email, role }: { email: string; role: string }) =>
@@ -114,6 +147,29 @@ export default function SettingsClient({ workspace }: { workspace: Workspace }) 
     onError: (err: Error) => toast.error(err.message),
   });
 
+  const disconnectMutation = useMutation({
+    mutationFn: ({ workspaceId, platform }: { workspaceId: string; platform: string }) =>
+      disconnectPlatform(workspaceId, platform),
+    onSuccess: (_, { platform }) => {
+      toast.success(`${platform} disconnected`);
+      setDisconnecting(null);
+      queryClient.invalidateQueries({ queryKey: ["settings", workspace.id] });
+    },
+    onError: (err: Error) => {
+      toast.error(err.message);
+      setDisconnecting(null);
+    },
+  });
+
+  const handleConnect = (platform: string) => {
+    window.location.href = `/api/platforms/meta/connect`;
+  };
+
+  const handleDisconnect = (platform: string) => {
+    setDisconnecting(platform);
+    disconnectMutation.mutate({ workspaceId: workspace.id, platform });
+  };
+
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inviteEmail.trim()) return;
@@ -121,7 +177,6 @@ export default function SettingsClient({ workspace }: { workspace: Workspace }) 
   };
 
   const brandConfig = (workspace.brand_config as Record<string, unknown>) || {};
-  const connections = workspace.platform_connections || [];
 
   return (
     <div>
@@ -133,7 +188,7 @@ export default function SettingsClient({ workspace }: { workspace: Workspace }) 
             <Palette className="w-5 h-5 text-gray-500" />
             <h2 className="text-lg font-semibold">Brand Configuration</h2>
           </div>
-          
+
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div>
               <p className="text-gray-500">Brand Name</p>
@@ -159,23 +214,85 @@ export default function SettingsClient({ workspace }: { workspace: Workspace }) 
         </div>
 
         <div className="bg-white rounded-xl border p-6">
-          <div className="flex items-center gap-3 mb-4">
+          <div className="flex items-center gap-3 mb-6">
             <Link2 className="w-5 h-5 text-gray-500" />
-            <h2 className="text-lg font-semibold">Connected Platforms</h2>
+            <h2 className="text-lg font-semibold">Social Accounts</h2>
           </div>
-          
-          {connections.length === 0 ? (
-            <p className="text-gray-500 text-sm">No platforms connected yet.</p>
-          ) : (
-            <div className="space-y-2">
-              {connections.map((conn) => (
-                <div key={conn.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <span className="font-medium capitalize">{conn.platform}</span>
-                  <span className="text-sm text-gray-500">{conn.platform_username || "Connected"}</span>
+
+          <div className="space-y-4">
+            {platforms.map((platform) => {
+              const isConnected = connectedPlatforms.has(platform.key);
+              const connection = connections.find((c) => c.platform === platform.key);
+
+              return (
+                <div
+                  key={platform.key}
+                  className="border rounded-lg overflow-hidden"
+                >
+                  <div className="flex items-center justify-between p-4">
+                    <div className="flex items-center gap-4">
+                      <div
+                        className="w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold text-lg"
+                        style={{ backgroundColor: platform.color }}
+                      >
+                        {platform.name.charAt(0)}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-medium">{platform.name}</h3>
+                          {isConnected && (
+                            <CheckCircle2 className="w-4 h-4 text-green-600" />
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-500">{platform.description}</p>
+                        {connection?.platform_username && (
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            Connected as @{connection.platform_username}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {isConnected ? (
+                      <button
+                        onClick={() => handleDisconnect(platform.key)}
+                        disabled={disconnecting === platform.key}
+                        className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 disabled:opacity-50"
+                      >
+                        {disconnecting === platform.key ? "..." : "Disconnect"}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleConnect(platform.key)}
+                        className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-white rounded-lg hover:opacity-90"
+                        style={{ backgroundColor: platform.color }}
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        Connect
+                      </button>
+                    )}
+                  </div>
+
+                  {isConnected && connection && (
+                    <div className="px-4 pb-3 text-xs text-gray-400">
+                      Connected {new Date(connection.connected_at).toLocaleDateString()}
+                    </div>
+                  )}
+
+                  {!isConnected && (
+                    <div className="px-4 pb-3 border-t bg-gray-50">
+                      <p className="text-xs text-gray-500 mt-2 mb-1">Requirements:</p>
+                      <ul className="text-xs text-gray-400 space-y-0.5">
+                        {platform.requirements.map((req, i) => (
+                          <li key={i}>• {req}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
-              ))}
-            </div>
-          )}
+              );
+            })}
+          </div>
         </div>
 
         <div className="bg-white rounded-xl border p-6">
@@ -192,18 +309,18 @@ export default function SettingsClient({ workspace }: { workspace: Workspace }) 
               Invite Member
             </button>
           </div>
-          
-          {(!members || members.length === 0) ? (
+
+          {(!workspace.members || workspace.members.length === 0) ? (
             <p className="text-gray-500 text-sm">No team members yet.</p>
           ) : (
             <div className="space-y-2">
-              {members.map((member) => (
+              {workspace.members.map((member) => (
                 <div key={member.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                   <div>
                     <p className="font-medium">{member.user.name || member.user.email}</p>
                     <p className="text-xs text-gray-500">{member.user.email}</p>
                   </div>
-                  
+
                   <div className="flex items-center gap-2">
                     <div className="relative">
                       <button
@@ -213,7 +330,7 @@ export default function SettingsClient({ workspace }: { workspace: Workspace }) 
                         {member.role}
                         <ChevronDown className="w-3 h-3" />
                       </button>
-                      
+
                       {roleDropdownOpen === member.id && (
                         <div className="absolute right-0 mt-1 w-32 bg-white border rounded-lg shadow-lg z-10">
                           {["owner", "admin", "member"].map((role) => (
@@ -230,7 +347,7 @@ export default function SettingsClient({ workspace }: { workspace: Workspace }) 
                         </div>
                       )}
                     </div>
-                    
+
                     <button
                       onClick={() => removeMutation.mutate({ memberId: member.id, email: member.user.email })}
                       className="p-1 text-gray-400 hover:text-red-600 rounded"
@@ -247,22 +364,22 @@ export default function SettingsClient({ workspace }: { workspace: Workspace }) 
 
       {isInviteOpen && (
         <div className="fixed inset-0 z-50">
-          <div 
-            className="absolute inset-0 bg-black/50" 
-            onClick={() => setIsInviteOpen(false)} 
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => setIsInviteOpen(false)}
           />
           <div className="fixed left-[50%] top-[50%] translate-x-[-50%] translate-y-[-50%] w-full max-w-lg">
             <div className="bg-white rounded-lg border shadow-lg p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-semibold">Invite Team Member</h2>
-                <button 
+                <button
                   onClick={() => setIsInviteOpen(false)}
                   className="p-1 hover:bg-gray-100 rounded"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              
+
               <form onSubmit={handleInvite}>
                 <div className="mb-4">
                   <label htmlFor="invite-email" className="block text-sm font-medium mb-1">
@@ -297,7 +414,7 @@ export default function SettingsClient({ workspace }: { workspace: Workspace }) 
                     <option value="admin">Admin</option>
                   </select>
                 </div>
-                
+
                 <div className="flex justify-end gap-2">
                   <button
                     type="button"
