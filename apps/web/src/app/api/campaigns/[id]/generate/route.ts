@@ -59,6 +59,10 @@ export async function POST(
       );
     }
 
+    const workspace = await prisma.workspace.findUnique({
+      where: { id: campaign.workspace_id },
+    });
+
     await prisma.campaign.update({
       where: { id: params.id },
       data: { status: "generating" },
@@ -78,6 +82,7 @@ export async function POST(
       brief: campaign.brief,
       platforms: campaign.platforms,
       audience: campaign.audience,
+      brandConfig: workspace?.brand_config,
     });
 
     await connection.quit();
