@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { getToken } from "next-auth/jwt";
+import { jwtVerify } from "jose";
 
 const publicPaths = ["/login", "/register", "/api/auth", "/api/register"];
 
@@ -11,12 +11,19 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const token = await getToken({
-    req: request,
-    secret: process.env.NEXTAUTH_SECRET,
-  });
+  const sessionCookie = 
+    request.cookies.get("authjs.session-token")?.value;
 
-  if (!token) {
+  if (!sessionCookie) {
+    const loginUrl = new URL("/login", request.url);
+    loginUrl.searchParams.set("callbackUrl", pathname);
+    return NextResponse.redirect(loginUrl);
+  }
+
+  try {
+    const secret = new TextEncoder().encode(process.env.NEXTAUTH_SECRET);
+    await jwtVerify(sessionCookie, secret);
+  } catch {
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("callbackUrl", pathname);
     return NextResponse.redirect(loginUrl);
@@ -26,5 +33,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|.*\\..*).*)"],
 };

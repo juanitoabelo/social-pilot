@@ -6,10 +6,7 @@ import { Megaphone, Image, Calendar, Plus, ArrowRight } from "lucide-react";
 
 async function getUserIdFromSession(): Promise<string | null> {
   const cookieStore = cookies();
-  
-  const sessionCookie = 
-    cookieStore.get("next-auth.session-token")?.value ||
-    cookieStore.get("__Secure-next-auth.session-token")?.value;
+  const sessionCookie = cookieStore.get("authjs.session-token")?.value;
 
   if (!sessionCookie) return null;
 
