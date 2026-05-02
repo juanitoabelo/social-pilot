@@ -4,9 +4,9 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { 
-  ArrowLeft, 
-  Image, 
+import {
+  ArrowLeft,
+  Image,
   Check,
   X,
   Trash2,
@@ -17,7 +17,10 @@ import {
   Shield,
   AlertTriangle,
   ShieldCheck,
-  ShieldAlert
+  ShieldAlert,
+  Calendar,
+  Clock,
+  CheckCircle2
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { calculateComplianceScore, getScoreColor, getScoreLabel } from '@/lib/compliance';
@@ -39,6 +42,9 @@ interface Post {
   caption: string;
   hashtags: string[];
   cta: string | null;
+  scheduled_at: string | null;
+  published_at: string | null;
+  error: string | null;
   assets: Asset[];
 }
 
@@ -98,12 +104,37 @@ async function patchPost(postId: string, updates: Record<string, unknown>) {
   return data.data;
 }
 
+const platformColors: Record<string, string> = {
+  instagram: '#E1306C',
+  facebook: '#1877F2',
+  twitter: '#1DA1F2',
+  linkedin: '#0A66C2',
+  tiktok: '#000000',
+  pinterest: '#E60023',
+};
+
+function formatDateTime(date: string): string {
+  return new Date(date).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function formatScheduleDate(date: Date): string {
+  return date.toISOString().slice(0, 16);
+}
+
 export default function CampaignDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [editedCaption, setEditedCaption] = useState('');
   const [editedHashtags, setEditedHashtags] = useState<string[]>([]);
+  const [scheduleModalPost, setScheduleModalPost] = useState<Post | null>(null);
+  const [scheduleDate, setScheduleDate] = useState('');
 
   const { data: campaign, isLoading } = useQuery({
     queryKey: ['campaign', params.id],
@@ -131,6 +162,31 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
     },
     onError: (err: Error) => toast.error(err.message),
   });
+
+  const scheduleMutation = useMutation({
+    mutationFn: ({ postId, date }: { postId: string; date: string }) =>
+      updatePost(postId, 'schedule', { scheduledAt: date }),
+    onSuccess: () => {
+      toast.success('Post scheduled');
+      setScheduleModalPost(null);
+      setScheduleDate('');
+      queryClient.invalidateQueries({ queryKey: ['campaign', params.id] });
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const handleApproveAndSchedule = (post: Post) => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(9, 0, 0, 0);
+    setScheduleDate(formatScheduleDate(tomorrow));
+    setScheduleModalPost(post);
+  };
+
+  const handleScheduleSubmit = () => {
+    if (!scheduleModalPost || !scheduleDate) return;
+    scheduleMutation.mutate({ postId: scheduleModalPost.id, date: scheduleDate });
+  };
 
   const rejectMutation = useMutation({
     mutationFn: (postId: string) => updatePost(postId, 'reject'),
@@ -429,27 +485,145 @@ export default function CampaignDetailPage({ params }: { params: { id: string } 
                   {editingPostId !== post.id && post.status === 'pending_review' && (
                     <div className="flex items-center gap-3 mt-6 pt-4 border-t">
                       <button
+                        onClick={() => handleApproveAndSchedule(post)}
+                        disabled={scheduleMutation.isPending}
+                        className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:bg-primary/90 disabled:opacity-50"
+                      >
+                        <Calendar className="w-4 h-4" />
+                        Approve & Schedule
+                      </button>
+                      <button
                         onClick={() => approveMutation.mutate(post.id)}
                         disabled={approveMutation.isPending}
-                        className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50"
+                        className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-green-700 bg-green-50 rounded-lg hover:bg-green-100 disabled:opacity-50"
                       >
                         <Check className="w-4 h-4" />
-                        Approve
+                        Approve Only
                       </button>
                       <button
                         onClick={() => rejectMutation.mutate(post.id)}
                         disabled={rejectMutation.isPending}
-                        className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50"
+                        className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 disabled:opacity-50"
                       >
                         <Trash2 className="w-4 h-4" />
                         Reject
                       </button>
                     </div>
                   )}
+
+                  {post.status === 'approved' && (
+                    <div className="flex items-center gap-3 mt-6 pt-4 border-t">
+                      <button
+                        onClick={() => {
+                          const tomorrow = new Date();
+                          tomorrow.setDate(tomorrow.getDate() + 1);
+                          tomorrow.setHours(9, 0, 0, 0);
+                          setScheduleDate(formatScheduleDate(tomorrow));
+                          setScheduleModalPost(post);
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:bg-primary/90"
+                      >
+                        <Clock className="w-4 h-4" />
+                        Schedule
+                      </button>
+                    </div>
+                  )}
+
+                  {post.status === 'scheduled' && post.scheduled_at && (
+                    <div className="mt-6 pt-4 border-t">
+                      <div className="flex items-center gap-2 text-sm text-blue-600">
+                        <Clock className="w-4 h-4" />
+                        Scheduled for {formatDateTime(post.scheduled_at)}
+                      </div>
+                    </div>
+                  )}
+
+                  {post.status === 'published' && post.published_at && (
+                    <div className="mt-6 pt-4 border-t">
+                      <div className="flex items-center gap-2 text-sm text-green-600">
+                        <CheckCircle2 className="w-4 h-4" />
+                        Published {formatDateTime(post.published_at)}
+                      </div>
+                    </div>
+                  )}
+
+                  {post.status === 'failed' && post.error && (
+                    <div className="mt-6 pt-4 border-t">
+                      <div className="flex items-center gap-2 text-sm text-red-600">
+                        <AlertTriangle className="w-4 h-4" />
+                        Failed: {post.error}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             );
           })}
+        </div>
+      )}
+
+      {scheduleModalPost && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold">Schedule Post</h2>
+              <button
+                onClick={() => {
+                  setScheduleModalPost(null);
+                  setScheduleDate('');
+                }}
+                className="p-1 hover:bg-gray-100 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+              <div className="flex items-center gap-2 mb-2">
+                <span
+                  className="w-3 h-3 rounded-full"
+                  style={{ backgroundColor: platformColors[scheduleModalPost.platform] }}
+                />
+                <span className="text-sm font-medium capitalize">{scheduleModalPost.platform}</span>
+              </div>
+              <p className="text-sm text-gray-600 line-clamp-2">{scheduleModalPost.caption}</p>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-1">Date & Time</label>
+              <input
+                type="datetime-local"
+                value={scheduleDate}
+                onChange={(e) => setScheduleDate(e.target.value)}
+                className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                min={new Date().toISOString().slice(0, 16)}
+              />
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => {
+                  setScheduleModalPost(null);
+                  setScheduleDate('');
+                }}
+                className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleScheduleSubmit}
+                disabled={scheduleMutation.isPending || !scheduleDate}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:bg-primary/90 disabled:opacity-50"
+              >
+                {scheduleMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4" />
+                )}
+                Schedule
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
