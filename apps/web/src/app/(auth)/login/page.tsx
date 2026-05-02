@@ -6,13 +6,17 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Sparkles } from "lucide-react";
 import { signIn } from "next-auth/react";
 
+const errorMessages: Record<string, string> = {
+  CredentialsSignin: "Invalid email or password. Please try again.",
+  Default: "Something went wrong. Please try again.",
+};
+
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState("");
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -26,32 +30,20 @@ export default function LoginPage() {
     if (isLoading) return;
     
     setIsLoading(true);
-    setError("");
-    
-    try {
-      const result = await signIn("credentials", {
-        email,
-        password,
-        redirect: false,
-      });
 
-      if (result?.error) {
-        setError(
-          result.error === "CredentialsSignin" || result.error === "InvalidProvider"
-            ? "Invalid email or password. Please try again."
-            : result.error
-        );
-      } else {
-        window.location.href = "/dashboard";
-        return;
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Unknown error";
-      setError(`Login failed: ${message}`);
-    } finally {
-      setIsLoading(false);
-    }
+    const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
+
+    await signIn("credentials", {
+      email,
+      password,
+      redirect: true,
+      callbackUrl,
+    });
   };
+
+  const registered = mounted && searchParams.get("registered");
+  const errorParam = searchParams.get("error");
+  const errorMessage = errorParam ? (errorMessages[errorParam] || errorMessages.Default) : "";
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
@@ -68,15 +60,15 @@ export default function LoginPage() {
         <div className="bg-white rounded-xl border p-8">
           <h1 className="text-2xl font-bold mb-6">Welcome back</h1>
           
-          {mounted && searchParams.get("registered") && (
+          {registered && (
             <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
               Account created! Sign in to continue.
             </div>
           )}
           
-          {error && (
+          {errorMessage && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
-              {error}
+              {errorMessage}
             </div>
           )}
           
