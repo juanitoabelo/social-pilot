@@ -23,10 +23,16 @@ export const prisma =
 
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 
-// Handle Neon serverless disconnects gracefully
+// Suppress Neon serverless disconnect noise
 prisma.$on("error", (e) => {
-  // Suppress "terminating connection due to administrator command" noise
   if (e.message?.includes("terminating connection")) return;
 });
+
+// Warm up connection on startup (handles Neon cold start)
+if (process.env.NODE_ENV === "development") {
+  prisma.$connect().catch(() => {
+    // Connection will retry on first query
+  });
+}
 
 export default prisma;
