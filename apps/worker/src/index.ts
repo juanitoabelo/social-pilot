@@ -5,6 +5,7 @@ import { startScheduledPostsWorker, createScheduledPostsQueue } from "./queues/s
 import { startTokenRefreshWorker, createTokenRefreshQueue, scheduleTokenRefreshChecks } from "./queues/token-refresh";
 import { startMetricsFetchWorker, createMetricsFetchQueue, scheduleMetricsCron } from "./queues/metrics-fetch";
 import { startNotificationsWorker, createNotificationsQueue, scheduleWeeklyDigests, schedulePlanLimitChecks } from "./queues/notifications";
+import { startBulkImportWorker, createBulkImportQueue } from "./queues/bulk-import";
 
 console.log("[Worker] NODE_ENV:", process.env.NODE_ENV);
 console.log("[Worker] REDIS_URL:", process.env.REDIS_URL ? "SET" : "NOT SET");
@@ -18,6 +19,7 @@ const queues = [
   createTokenRefreshQueue(),
   createMetricsFetchQueue(),
   createNotificationsQueue(),
+  createBulkImportQueue(),
 ];
 
 let workers: (
@@ -26,6 +28,7 @@ let workers: (
   | Awaited<ReturnType<typeof startTokenRefreshWorker>>
   | Awaited<ReturnType<typeof startMetricsFetchWorker>>
   | Awaited<ReturnType<typeof startNotificationsWorker>>
+  | Awaited<ReturnType<typeof startBulkImportWorker>>
 )[] = [];
 
 async function startup() {
@@ -62,6 +65,10 @@ async function startup() {
 
   await schedulePlanLimitChecks();
   console.log("[Worker] Plan limit checks scheduled.");
+
+  const bulkImportWorker = await startBulkImportWorker();
+  workers.push(bulkImportWorker);
+  console.log("[Worker] Bulk import worker running.");
 }
 
 async function shutdown(signal: string) {

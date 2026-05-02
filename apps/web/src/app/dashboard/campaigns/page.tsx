@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
   Megaphone, 
@@ -9,9 +9,11 @@ import {
   Trash2, 
   Loader2,
   ExternalLink,
-  Calendar
+  Calendar,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { GoogleSheetsImportModal } from '@/components/campaigns/google-sheets-import';
 
 interface Campaign {
   id: string;
@@ -51,6 +53,16 @@ async function deleteCampaign(id: string) {
 export default function CampaignsPage() {
   const queryClient = useQueryClient();
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [showGoogleImport, setShowGoogleImport] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('google_connected') === 'true') {
+      toast.success('Google Sheets connected');
+      setShowGoogleImport(true);
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
 
   const { data: campaigns, isLoading } = useQuery({
     queryKey: ['campaigns'],
@@ -104,13 +116,22 @@ export default function CampaignsPage() {
           <h1 className="text-2xl font-bold">Campaigns</h1>
           <p className="text-gray-500 mt-1">Create and manage your content campaigns</p>
         </div>
-        <Link 
-          href="/dashboard/campaigns/new" 
-          className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          <span>New Campaign</span>
-        </Link>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowGoogleImport(true)}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-green-700 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            <span>Import from Sheets</span>
+          </button>
+          <Link 
+            href="/dashboard/campaigns/new" 
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            <span>New Campaign</span>
+          </Link>
+        </div>
       </div>
 
       {isLoading ? (
@@ -193,6 +214,10 @@ export default function CampaignsPage() {
             </div>
           ))}
         </div>
+      )}
+
+      {showGoogleImport && (
+        <GoogleSheetsImportModal onClose={() => setShowGoogleImport(false)} />
       )}
     </div>
   );

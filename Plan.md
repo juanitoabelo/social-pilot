@@ -835,6 +835,21 @@ These features are intentionally excluded from the MVP. Build after launch with 
 - Client read-only access (view analytics, approve content)
 - Bulk workspace management for agencies
 
+### Google Sheets / CSV bulk import
+- ✅ Google OAuth connect/callback (`/api/integrations/google/connect` + `/callback`)
+- ✅ `spreadsheets.readonly` + `drive.readonly` scopes for listing and reading sheets
+- ✅ `listSpreadsheets()` — fetch user's Google Sheets via Drive API v3
+- ✅ `readSheetData()` — read tab data via Sheets API v4, parse headers + rows
+- ✅ `normalizeColumnMapping()` — auto-detect columns (date, time, platform, caption, hashtags, media_url)
+- ✅ `bulk-import` BullMQ queue + worker — processes rows, creates posts + assets
+- ✅ Media download from URLs in sheet → S3 upload → asset creation
+- ✅ Date/time parsing (ISO format, MM/DD/YYYY, with time column)
+- ✅ Platform auto-detection from column values (instagram, facebook, twitter, etc.)
+- ✅ Spreadsheet picker UI — list sheets, preview data, map columns, import
+- ✅ Import modes: review queue, scheduled (if dates set), draft
+- ✅ Campaigns page "Import from Sheets" button + modal
+- ⚠️ Requires `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` env vars
+
 ### Browser extension
 - Capture content inspiration while browsing
 - One-click "create post from this" on any image or article
