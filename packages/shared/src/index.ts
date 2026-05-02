@@ -10,12 +10,12 @@ export type WorkspaceRole = "owner" | "admin" | "member";
 
 export type CampaignStatus = "draft" | "generating" | "ready" | "archived";
 
-export type PostStatus = 
-  | "pending_review" 
-  | "approved" 
-  | "scheduled" 
-  | "publishing" 
-  | "published" 
+export type PostStatus =
+  | "pending_review"
+  | "approved"
+  | "scheduled"
+  | "publishing"
+  | "published"
   | "failed";
 
 export interface BrandConfig {
@@ -90,6 +90,30 @@ export const PLATFORM_LIMITS: Record<Platform, { caption: number }> = {
   linkedin: { caption: 3000 },
   pinterest: { caption: 500 },
 };
+
+export interface PublishResult {
+  platform_post_id: string;
+  url?: string;
+}
+
+export interface PublishPayload {
+  postId: string;
+  platform: Platform;
+  caption: string;
+  hashtags: string[];
+  cta?: string;
+  assetUrls: string[];
+  accessToken: string;
+  refreshToken?: string;
+  platformUserId?: string;
+  scheduledAt: string;
+}
+
+export interface PlatformAdapter {
+  publish(payload: PublishPayload): Promise<PublishResult>;
+  validateToken(accessToken: string): Promise<boolean>;
+  refreshToken(refreshToken: string): Promise<{ accessToken: string; refreshToken?: string; expiresIn?: number }>;
+}
 
 export function formatApiResponse<T>(data: T, error: null): { data: T; error: null };
 export function formatApiResponse<T>(data: null, error: { code: string; message: string }): { data: null; error: { code: string; message: string } };

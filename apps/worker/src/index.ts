@@ -1,22 +1,27 @@
 import "./setup";
 import { startContentWorker } from "./queues/content-worker";
 import { createContentQueue } from "./queues/content-worker";
+import { startScheduledPostsWorker, createScheduledPostsQueue } from "./queues/scheduled-posts";
 
-// Debug: Log environment variables to see if they're loaded
 console.log("[Worker] NODE_ENV:", process.env.NODE_ENV);
 console.log("[Worker] REDIS_URL:", process.env.REDIS_URL ? "SET" : "NOT SET");
 if (process.env.REDIS_URL) {
   console.log("[Worker] REDIS_URL (first 20 chars):", process.env.REDIS_URL.substring(0, 20));
 }
 
-const queues = [createContentQueue()];
-let workers: Awaited<ReturnType<typeof startContentWorker>>[] = [];
+const queues = [createContentQueue(), createScheduledPostsQueue()];
+let workers: (Awaited<ReturnType<typeof startContentWorker>> | Awaited<ReturnType<typeof startScheduledPostsWorker>>)[] = [];
 
 async function startup() {
-  console.log("[Worker] Starting content worker...");
-  const worker = await startContentWorker();
-  workers.push(worker);
+  console.log("[Worker] Starting workers...");
+
+  const contentWorker = await startContentWorker();
+  workers.push(contentWorker);
   console.log("[Worker] Content worker running. PID:", process.pid);
+
+  const publisherWorker = await startScheduledPostsWorker();
+  workers.push(publisherWorker);
+  console.log("[Worker] Publisher worker running.");
 }
 
 async function shutdown(signal: string) {
