@@ -1,26 +1,48 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import Link from "next/link";
+import { useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { Sparkles } from "lucide-react";
+import Link from "next/link";
 
 const errorMessages: Record<string, string> = {
   CredentialsSignin: "Invalid email or password. Please try again.",
   Default: "Something went wrong. Please try again.",
 };
 
+function RegisteredBanner() {
+  const searchParams = useSearchParams();
+  const registered = searchParams.get("registered");
+
+  if (!registered) return null;
+
+  return (
+    <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-800">
+      Account created! Sign in to continue.
+    </div>
+  );
+}
+
+function ErrorBanner() {
+  const searchParams = useSearchParams();
+  const errorParam = searchParams.get("error");
+  const errorMessage = errorParam ? (errorMessages[errorParam] || errorMessages.Default) : "";
+
+  if (!errorMessage) return null;
+
+  return (
+    <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
+      {errorMessage}
+    </div>
+  );
+}
+
 export default function LoginPage() {
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,10 +52,6 @@ export default function LoginPage() {
     const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
     await signIn("credentials", { email, password, redirect: true, callbackUrl });
   };
-
-  const registered = mounted && searchParams.get("registered");
-  const errorParam = searchParams.get("error");
-  const errorMessage = errorParam ? (errorMessages[errorParam] || errorMessages.Default) : "";
 
   return (
     <>
@@ -54,17 +72,12 @@ export default function LoginPage() {
         </p>
       </div>
 
-      {registered && (
-        <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-800">
-          Account created! Sign in to continue.
-        </div>
-      )}
-
-      {errorMessage && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
-          {errorMessage}
-        </div>
-      )}
+      <Suspense fallback={null}>
+        <RegisteredBanner />
+      </Suspense>
+      <Suspense fallback={null}>
+        <ErrorBanner />
+      </Suspense>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
