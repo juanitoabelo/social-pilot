@@ -4,23 +4,32 @@ import { prisma } from "@/lib/db";
 import Link from "next/link";
 import { Megaphone, Image, Calendar, Plus, ArrowRight } from "lucide-react";
 
-async function getUserIdFromSession(): Promise<string | null> {
+async function getSessionUserId(): Promise<string | null> {
   const cookieStore = cookies();
-  const sessionCookie = cookieStore.get("authjs.session-token")?.value;
+  const possibleNames = [
+    "authjs.session-token",
+    "__Secure-authjs.session-token",
+    "next-auth.session-token",
+    "__Secure-next-auth.session-token",
+  ];
 
-  if (!sessionCookie) return null;
+  for (const name of possibleNames) {
+    const cookie = cookieStore.get(name);
+    if (!cookie?.value) continue;
 
-  try {
-    const secret = new TextEncoder().encode(process.env.NEXTAUTH_SECRET);
-    const { payload } = await jwtVerify(sessionCookie, secret);
-    return payload.sub as string | null;
-  } catch {
-    return null;
+    try {
+      const secret = new TextEncoder().encode(process.env.NEXTAUTH_SECRET);
+      const { payload } = await jwtVerify(cookie.value, secret);
+      return payload.sub as string | null;
+    } catch {
+      continue;
+    }
   }
+  return null;
 }
 
 export default async function DashboardPage() {
-  const userId = await getUserIdFromSession();
+  const userId = await getSessionUserId();
 
   if (!userId) {
     return null;

@@ -1,32 +1,39 @@
-import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
+import { redirect, cookies } from "next/navigation";
 import { jwtVerify } from "jose";
 import { prisma } from "@/lib/db";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { TopBar } from "@/components/dashboard/topbar";
+
+async function getSessionUserId(): Promise<string | null> {
+  const cookieStore = cookies();
+  const possibleNames = [
+    "authjs.session-token",
+    "__Secure-authjs.session-token",
+    "next-auth.session-token",
+    "__Secure-next-auth.session-token",
+  ];
+
+  for (const name of possibleNames) {
+    const cookie = cookieStore.get(name);
+    if (!cookie?.value) continue;
+
+    try {
+      const secret = new TextEncoder().encode(process.env.NEXTAUTH_SECRET);
+      const { payload } = await jwtVerify(cookie.value, secret);
+      return payload.sub as string | null;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
 
 export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const cookieStore = cookies();
-  
-  const sessionCookie = cookieStore.get("authjs.session-token")?.value;
-
-  if (!sessionCookie) {
-    redirect("/login");
-  }
-
-  let userId: string | undefined;
-  
-  try {
-    const secret = new TextEncoder().encode(process.env.NEXTAUTH_SECRET);
-    const { payload } = await jwtVerify(sessionCookie, secret);
-    userId = payload.sub as string | undefined;
-  } catch {
-    redirect("/login");
-  }
+  const userId = await getSessionUserId();
 
   if (!userId) {
     redirect("/login");
@@ -47,6 +54,7 @@ export default async function DashboardLayout({
     redirect("/login");
   }
 
+  const cookieStore = cookies();
   const preferredWorkspaceId = cookieStore.get("workspace_id")?.value;
   
   let currentWorkspace = user.workspaces[0]?.workspace;
