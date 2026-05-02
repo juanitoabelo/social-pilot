@@ -1,0 +1,29 @@
+{
+  "name": "socialpilot",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm -r --parallel run dev",
+    "dev:web": "pnpm --filter web run dev",
+    "dev:worker": "pnpm --filter worker run dev",
+    "build": "pnpm -r run build",
+    "build:web": "pnpm --filter web run build",
+    "build:worker": "pnpm --filter worker run build",
+    "lint": "pnpm -r run lint",
+    "typecheck": "pnpm -r run typecheck",
+    "test": "pnpm -r --if-present run test",
+    "test:e2e": "pnpm -r --if-present run test:e2e",
+    "db:migrate": "pnpm --filter database run migrate",
+    "db:studio": "pnpm --filter database run studio",
+    "db:seed": "pnpm --filter database run seed",
+    "prepare": "husky install"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^15.4.1",
+    "typescript": "^5.7.3"
+  }
+}

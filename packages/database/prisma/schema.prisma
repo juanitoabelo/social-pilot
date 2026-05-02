@@ -1,0 +1,191 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Workspace {
+  id           String   @id @default(cuid())
+  name         String
+  slug         String   @unique
+  brand_config Json     @default("{}")
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  members              WorkspaceMember[]
+  campaigns            Campaign[]
+  platform_connections PlatformConnection[]
+}
+
+model User {
+  id         String   @id @default(cuid())
+  email      String   @unique
+  name       String?
+  password   String?
+  avatar_url String?
+  created_at DateTime @default(now())
+
+  workspaces WorkspaceMember[]
+  accounts   Account[]
+  sessions   Session[]
+}
+
+model WorkspaceMember {
+  id           String    @id @default(cuid())
+  workspace_id String
+  user_id      String
+  role         String    @default("member")
+  joined_at    DateTime  @default(now())
+
+  workspace Workspace @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([workspace_id, user_id])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  user_id           String
+  type              String
+  provider          String
+  provider_account_id String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  @@unique([provider, provider_account_id])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  session_token String   @unique
+  user_id      String
+  expires      DateTime
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Campaign {
+  id           String   @id @default(cuid())
+  workspace_id String
+  title        String
+  brief        String
+  audience     Json     @default("{}")
+  platforms    String[]
+  status       String   @default("draft")
+  created_by   String
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  posts     Post[]
+
+  @@index([workspace_id, status])
+}
+
+model Post {
+  id              String    @id @default(cuid())
+  campaign_id     String
+  platform        String
+  status          String    @default("pending_review")
+  caption         String
+  hashtags        String[]
+  cta             String?
+  scheduled_at    DateTime?
+  published_at    DateTime?
+  platform_post_id String?
+  error           String?
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+
+  campaign Campaign     @relation(fields: [campaign_id], references: [id], onDelete: Cascade)
+  assets   Asset[]
+  metrics  PostMetrics[]
+  jobs     ScheduleJob[]
+
+  @@index([campaign_id])
+  @@index([status, scheduled_at])
+}
+
+model Asset {
+  id         String   @id @default(cuid())
+  post_id    String
+  type       String
+  s3_key     String
+  url        String
+  format     String
+  width      Int?
+  height     Int?
+  size_bytes Int?
+  alt_text   String?
+  created_at DateTime @default(now())
+
+  post Post @relation(fields: [post_id], references: [id], onDelete: Cascade)
+}
+
+model PlatformConnection {
+  id               String    @id @default(cuid())
+  workspace_id     String
+  platform         String
+  access_token     String
+  refresh_token    String?
+  token_expires_at DateTime?
+  scopes           String[]
+  platform_user_id String?
+  platform_username String?
+  connected_at     DateTime  @default(now())
+  updated_at       DateTime  @updatedAt
+
+  workspace Workspace @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+
+  @@unique([workspace_id, platform])
+  @@index([token_expires_at])
+}
+
+model PostMetrics {
+  id               String   @id @default(cuid())
+  post_id          String
+  platform_post_id String
+  likes            Int      @default(0)
+  comments         Int      @default(0)
+  shares           Int      @default(0)
+  saves            Int      @default(0)
+  reach            Int      @default(0)
+  impressions      Int      @default(0)
+  clicks           Int      @default(0)
+  engagement_rate  Float    @default(0)
+  fetched_at       DateTime @default(now())
+
+  post Post @relation(fields: [post_id], references: [id], onDelete: Cascade)
+
+  @@index([post_id, fetched_at(sort: Desc)])
+}
+
+model ScheduleJob {
+  id           String    @id @default(cuid())
+  post_id      String
+  bullmq_job_id String?
+  scheduled_at DateTime
+  status       String    @default("pending")
+  attempts     Int       @default(0)
+  last_error   String?
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
+
+  post Post @relation(fields: [post_id], references: [id], onDelete: Cascade)
+}
