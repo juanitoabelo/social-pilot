@@ -21,6 +21,10 @@ export default function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    e.stopPropagation();
+    
+    if (isLoading) return;
+    
     setIsLoading(true);
     setError("");
     
@@ -32,13 +36,19 @@ export default function LoginPage() {
       });
 
       if (result?.error) {
-        setError("Invalid email or password");
-        setIsLoading(false);
+        setError(
+          result.error === "CredentialsSignin" || result.error === "InvalidProvider"
+            ? "Invalid email or password. Please try again."
+            : result.error
+        );
       } else {
         window.location.href = "/dashboard";
+        return;
       }
-    } catch {
-      setError("Something went wrong");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      setError(`Login failed: ${message}`);
+    } finally {
       setIsLoading(false);
     }
   };
