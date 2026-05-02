@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
-import { auth } from "@/lib/auth";
+import { jwtVerify } from "jose";
 import { prisma } from "@/lib/db";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { TopBar } from "@/components/dashboard/topbar";
@@ -10,14 +10,32 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const session = await auth();
+  const cookieStore = cookies();
+  
+  const sessionCookie = 
+    cookieStore.get("next-auth.session-token")?.value ||
+    cookieStore.get("__Secure-next-auth.session-token")?.value;
 
-  if (!session?.user?.email) {
+  if (!sessionCookie) {
+    redirect("/login");
+  }
+
+  let userId: string | undefined;
+  
+  try {
+    const secret = new TextEncoder().encode(process.env.NEXTAUTH_SECRET);
+    const { payload } = await jwtVerify(sessionCookie, secret);
+    userId = payload.sub as string | undefined;
+  } catch {
+    redirect("/login");
+  }
+
+  if (!userId) {
     redirect("/login");
   }
 
   const user = await prisma.user.findUnique({
-    where: { email: session.user.email },
+    where: { id: userId },
     include: {
       workspaces: {
         include: {
@@ -27,12 +45,15 @@ export default async function DashboardLayout({
     },
   });
 
-  const cookieStore = cookies();
+  if (!user) {
+    redirect("/login");
+  }
+
   const preferredWorkspaceId = cookieStore.get("workspace_id")?.value;
   
-  let currentWorkspace = user?.workspaces[0]?.workspace;
+  let currentWorkspace = user.workspaces[0]?.workspace;
   
-  if (preferredWorkspaceId && user?.workspaces) {
+  if (preferredWorkspaceId) {
     const preferred = user.workspaces.find(
       (w) => w.workspace.id === preferredWorkspaceId
     );
@@ -47,7 +68,7 @@ export default async function DashboardLayout({
       <div className="lg:pl-64">
         <TopBar 
           workspace={currentWorkspace} 
-          workspaces={user?.workspaces.map(w => w.workspace) || []} 
+          workspaces={user.workspaces.map(w => w.workspace)} 
         />
         <main className="p-6">{children}</main>
       </div>

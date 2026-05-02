@@ -1,17 +1,36 @@
-import { auth } from "@/lib/auth";
+import { cookies } from "next/headers";
+import { jwtVerify } from "jose";
 import { prisma } from "@/lib/db";
 import Link from "next/link";
 import { Megaphone, Image, Calendar, Plus, ArrowRight } from "lucide-react";
 
-export default async function DashboardPage() {
-  const session = await auth();
+async function getUserIdFromSession(): Promise<string | null> {
+  const cookieStore = cookies();
   
-  if (!session?.user?.email) {
+  const sessionCookie = 
+    cookieStore.get("next-auth.session-token")?.value ||
+    cookieStore.get("__Secure-next-auth.session-token")?.value;
+
+  if (!sessionCookie) return null;
+
+  try {
+    const secret = new TextEncoder().encode(process.env.NEXTAUTH_SECRET);
+    const { payload } = await jwtVerify(sessionCookie, secret);
+    return payload.sub as string | null;
+  } catch {
+    return null;
+  }
+}
+
+export default async function DashboardPage() {
+  const userId = await getUserIdFromSession();
+
+  if (!userId) {
     return null;
   }
 
   const user = await prisma.user.findUnique({
-    where: { email: session.user.email },
+    where: { id: userId },
     include: {
       workspaces: {
         include: {
@@ -29,13 +48,17 @@ export default async function DashboardPage() {
     },
   });
 
-  const workspace = user?.workspaces[0]?.workspace;
+  if (!user) {
+    return null;
+  }
+
+  const workspace = user.workspaces[0]?.workspace;
   const campaigns = workspace?.campaigns || [];
   const connections = workspace?.platform_connections || [];
 
   const stats = {
     totalCampaigns: campaigns.length,
-    totalPosts: 0, // Would need to join with posts
+    totalPosts: 0,
     connectedPlatforms: connections.length,
   };
 
