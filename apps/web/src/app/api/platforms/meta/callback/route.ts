@@ -88,7 +88,7 @@ export async function GET(request: NextRequest) {
       longLivedToken
     );
 
-    await prisma.platform_connection.upsert({
+    await prisma.platformConnection.upsert({
       where: {
         workspace_id_platform: {
           workspace_id: state.workspaceId,
@@ -117,7 +117,7 @@ export async function GET(request: NextRequest) {
     });
 
     if (instagramAccount) {
-      await prisma.platform_connection.upsert({
+      await prisma.platformConnection.upsert({
         where: {
           workspace_id_platform: {
             workspace_id: state.workspaceId,

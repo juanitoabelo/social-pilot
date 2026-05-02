@@ -2,6 +2,7 @@ import { Queue, Worker, type Job } from "bullmq";
 import { redis } from "../lib/redis";
 import { prisma } from "../lib/prisma";
 import { publishPost } from "../services/publisher";
+import { scheduleMetricsFetchForPost } from "./metrics-fetch";
 
 export const SCHEDULED_POSTS_QUEUE = "scheduled-posts";
 
@@ -138,6 +139,10 @@ async function processPublishJob(
 
     await job.updateProgress(100);
     console.log(`[PublisherWorker] Post ${postId} published successfully — ID: ${result.platform_post_id}`);
+
+    await scheduleMetricsFetchForPost(postId);
+    console.log(`[PublisherWorker] Metrics fetch scheduled for post ${postId}`);
+
     return result;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";

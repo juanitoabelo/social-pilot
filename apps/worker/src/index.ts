@@ -1,7 +1,8 @@
 import "./setup";
-import { startContentWorker } from "./queues/content-worker";
-import { createContentQueue } from "./queues/content-worker";
+import { startContentWorker, createContentQueue } from "./queues/content-worker";
 import { startScheduledPostsWorker, createScheduledPostsQueue } from "./queues/scheduled-posts";
+import { startTokenRefreshWorker, createTokenRefreshQueue, scheduleTokenRefreshChecks } from "./queues/token-refresh";
+import { startMetricsFetchWorker, createMetricsFetchQueue } from "./queues/metrics-fetch";
 
 console.log("[Worker] NODE_ENV:", process.env.NODE_ENV);
 console.log("[Worker] REDIS_URL:", process.env.REDIS_URL ? "SET" : "NOT SET");
@@ -9,8 +10,19 @@ if (process.env.REDIS_URL) {
   console.log("[Worker] REDIS_URL (first 20 chars):", process.env.REDIS_URL.substring(0, 20));
 }
 
-const queues = [createContentQueue(), createScheduledPostsQueue()];
-let workers: (Awaited<ReturnType<typeof startContentWorker>> | Awaited<ReturnType<typeof startScheduledPostsWorker>>)[] = [];
+const queues = [
+  createContentQueue(),
+  createScheduledPostsQueue(),
+  createTokenRefreshQueue(),
+  createMetricsFetchQueue(),
+];
+
+let workers: (
+  | Awaited<ReturnType<typeof startContentWorker>>
+  | Awaited<ReturnType<typeof startScheduledPostsWorker>>
+  | Awaited<ReturnType<typeof startTokenRefreshWorker>>
+  | Awaited<ReturnType<typeof startMetricsFetchWorker>>
+)[] = [];
 
 async function startup() {
   console.log("[Worker] Starting workers...");
@@ -22,6 +34,17 @@ async function startup() {
   const publisherWorker = await startScheduledPostsWorker();
   workers.push(publisherWorker);
   console.log("[Worker] Publisher worker running.");
+
+  const tokenRefreshWorker = await startTokenRefreshWorker();
+  workers.push(tokenRefreshWorker);
+  console.log("[Worker] Token refresh worker running.");
+
+  const metricsWorker = await startMetricsFetchWorker();
+  workers.push(metricsWorker);
+  console.log("[Worker] Metrics fetch worker running.");
+
+  await scheduleTokenRefreshChecks();
+  console.log("[Worker] Token refresh checks scheduled.");
 }
 
 async function shutdown(signal: string) {

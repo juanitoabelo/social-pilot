@@ -47,7 +47,7 @@ export async function DELETE(request: NextRequest) {
     );
   }
 
-  await prisma.platform_connection.delete({
+  await prisma.platformConnection.delete({
     where: {
       workspace_id_platform: {
         workspace_id: workspaceId,

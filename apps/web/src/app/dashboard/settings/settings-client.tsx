@@ -23,7 +23,7 @@ interface Workspace {
     id: string;
     platform: string;
     platform_username: string | null;
-    connected_at: string;
+    connected_at: Date;
   }>;
   members: Member[];
 }
