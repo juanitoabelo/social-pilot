@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Users, Link2, Palette, Plus, X, Trash2, ChevronDown, ExternalLink, CheckCircle2 } from "lucide-react";
+import { Users, Link2, Palette, Plus, X, Trash2, ChevronDown, ExternalLink, CheckCircle2, CreditCard, Zap, ArrowUpRight } from "lucide-react";
 import { toast } from "sonner";
+import type { PlanKey } from "@/lib/stripe";
 
 interface Member {
   id: string;
@@ -27,6 +28,26 @@ interface Workspace {
   }>;
   members: Member[];
 }
+
+interface SubscriptionInfo {
+  plan: PlanKey;
+  status: string;
+  endsAt: Date | null;
+  generationsUsed: number;
+  limits: {
+    name: string;
+    price: number;
+    maxGenerations: number;
+    maxPlatforms: number;
+    maxScheduledPosts: number;
+  };
+}
+
+const PLANS_DISPLAY = [
+  { key: "solo", name: "Solo", price: 29, generations: 100, platforms: 3, posts: 50 },
+  { key: "team", name: "Team", price: 79, generations: 500, platforms: 6, posts: 200 },
+  { key: "agency", name: "Agency", price: 199, generations: "Unlimited", platforms: 6, posts: "Unlimited" },
+];
 
 async function inviteMember(workspaceId: string, email: string, role: string) {
   const res = await fetch(`/api/workspaces/${workspaceId}/members`, {
@@ -86,9 +107,16 @@ const platforms = [
     description: "Connect your Facebook Page to publish posts and track engagement",
     requirements: ["Facebook Page with admin access"],
   },
+  {
+    key: "twitter",
+    name: "X / Twitter",
+    color: "#000000",
+    description: "Connect your X account to publish tweets with images",
+    requirements: ["X API access (Basic plan or higher)"],
+  },
 ];
 
-export default function SettingsClient({ workspace }: { workspace: Workspace }) {
+export default function SettingsClient({ workspace, subscription }: { workspace: Workspace; subscription?: SubscriptionInfo }) {
   const queryClient = useQueryClient();
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
@@ -162,12 +190,38 @@ export default function SettingsClient({ workspace }: { workspace: Workspace }) 
   });
 
   const handleConnect = (platform: string) => {
-    window.location.href = `/api/platforms/meta/connect`;
+    window.location.href = `/api/platforms/${platform}/connect`;
   };
 
   const handleDisconnect = (platform: string) => {
     setDisconnecting(platform);
     disconnectMutation.mutate({ workspaceId: workspace.id, platform });
+  };
+
+  const handleUpgrade = async (plan: string) => {
+    try {
+      const res = await fetch("/api/billing/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error.message);
+      window.location.href = data.data.url;
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to start checkout");
+    }
+  };
+
+  const handleManageBilling = async () => {
+    try {
+      const res = await fetch("/api/billing/portal", { method: "POST" });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error.message);
+      window.location.href = data.data.url;
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to open billing portal");
+    }
   };
 
   const handleInvite = async (e: React.FormEvent) => {
@@ -212,6 +266,113 @@ export default function SettingsClient({ workspace }: { workspace: Workspace }) 
             Edit your brand configuration in your workspace settings.
           </p>
         </div>
+
+        {subscription && (
+          <div className="bg-white rounded-xl border p-6">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <CreditCard className="w-5 h-5 text-gray-500" />
+                <h2 className="text-lg font-semibold">Billing & Plan</h2>
+              </div>
+              {subscription.status === "active" && (
+                <button
+                  onClick={handleManageBilling}
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200"
+                >
+                  Manage Billing
+                </button>
+              )}
+            </div>
+
+            <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-500">Current Plan</p>
+                  <p className="text-xl font-bold capitalize">{subscription.plan}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm text-gray-500">Status</p>
+                  <p className={`text-sm font-medium ${
+                    subscription.status === "active" ? "text-green-600" :
+                    subscription.status === "past_due" ? "text-amber-600" :
+                    "text-gray-400"
+                  }`}>
+                    {subscription.status === "none" ? "No subscription" : subscription.status}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 pt-4 border-t grid grid-cols-3 gap-4 text-sm">
+                <div>
+                  <p className="text-gray-500">AI Generations</p>
+                  <p className="font-medium">
+                    {subscription.generationsUsed} / {subscription.limits.maxGenerations === 999999 ? "Unlimited" : subscription.limits.maxGenerations}
+                  </p>
+                  <div className="mt-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-primary rounded-full transition-all"
+                      style={{
+                        width: `${Math.min((subscription.generationsUsed / subscription.limits.maxGenerations) * 100, 100)}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <p className="text-gray-500">Platforms</p>
+                  <p className="font-medium">Up to {subscription.limits.maxPlatforms}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Scheduled Posts</p>
+                  <p className="font-medium">Up to {subscription.limits.maxScheduledPosts === 999999 ? "Unlimited" : subscription.limits.maxScheduledPosts}</p>
+                </div>
+              </div>
+            </div>
+
+            <h3 className="text-sm font-medium text-gray-900 mb-4">Upgrade Plan</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {PLANS_DISPLAY.map((plan) => {
+                const isCurrent = subscription.plan === plan.key;
+                const isFree = subscription.plan === "free";
+
+                return (
+                  <div
+                    key={plan.key}
+                    className={`border rounded-lg p-4 ${
+                      isCurrent ? "border-primary bg-primary/5" : "hover:border-gray-300"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="font-semibold capitalize">{plan.name}</h4>
+                      {isCurrent && (
+                        <span className="text-xs font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+                          Current
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-2xl font-bold mb-1">
+                      ${typeof plan.price === "number" ? plan.price : plan.price}
+                      <span className="text-sm font-normal text-gray-500">/mo</span>
+                    </p>
+                    <ul className="text-sm text-gray-600 space-y-1 mb-4">
+                      <li>{typeof plan.generations === "number" ? `${plan.generations} AI generations` : "Unlimited AI generations"}</li>
+                      <li>{plan.platforms} platforms</li>
+                      <li>{typeof plan.posts === "number" ? `${plan.posts} scheduled posts` : "Unlimited scheduled posts"}</li>
+                    </ul>
+                    {!isCurrent && (
+                      <button
+                        onClick={() => handleUpgrade(plan.key)}
+                        className="w-full flex items-center justify-center gap-1 px-3 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800"
+                      >
+                        Upgrade
+                        <ArrowUpRight className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         <div className="bg-white rounded-xl border p-6">
           <div className="flex items-center gap-3 mb-6">

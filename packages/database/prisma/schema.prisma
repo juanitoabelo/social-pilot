@@ -12,11 +12,18 @@ model Workspace {
   name                 String
   slug                 String               @unique
   brand_config         Json                 @default("{}")
+  stripe_customer_id   String?
+  stripe_subscription_id String?
+  subscription_plan    String               @default("free")
+  subscription_status  String               @default("none")
+  subscription_ends_at DateTime?
+  ai_generations_this_month Int             @default(0)
   created_at           DateTime             @default(now())
   updated_at           DateTime             @updatedAt
   campaigns            Campaign[]
   platform_connections PlatformConnection[]
   members              WorkspaceMember[]
+  activity_logs        ActivityLog[]
 }
 
 model User {
@@ -29,6 +36,8 @@ model User {
   accounts   Account[]
   sessions   Session[]
   workspaces WorkspaceMember[]
+  comments   Comment[]
+  activity_logs ActivityLog[]
 }
 
 model WorkspaceMember {
@@ -84,6 +93,8 @@ model Campaign {
   audience     Json      @default("{}")
   platforms    String[]
   status       String    @default("draft")
+  variant_count Int     @default(1)
+  generate_video Boolean @default(false)
   created_by   String
   created_at   DateTime  @default(now())
   updated_at   DateTime  @updatedAt
@@ -101,6 +112,8 @@ model Post {
   caption          String
   hashtags         String[]
   cta              String?
+  variant_label    String        @default("A")
+  is_variant_winner Boolean      @default(false)
   scheduled_at     DateTime?
   published_at     DateTime?
   platform_post_id String?
@@ -111,9 +124,11 @@ model Post {
   campaign         Campaign      @relation(fields: [campaign_id], references: [id], onDelete: Cascade)
   metrics          PostMetrics[]
   jobs             ScheduleJob[]
+  comments         Comment[]
 
   @@index([campaign_id])
   @@index([status, scheduled_at])
+  @@index([campaign_id, platform, variant_label])
 }
 
 model Asset {
@@ -178,4 +193,35 @@ model ScheduleJob {
   created_at    DateTime @default(now())
   updated_at    DateTime @updatedAt
   post          Post     @relation(fields: [post_id], references: [id], onDelete: Cascade)
+}
+
+model Comment {
+  id         String   @id @default(cuid())
+  post_id    String
+  user_id    String
+  body       String
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  post Post   @relation(fields: [post_id], references: [id], onDelete: Cascade)
+  user User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([post_id, created_at(sort: Desc)])
+}
+
+model ActivityLog {
+  id         String   @id @default(cuid())
+  workspace_id String
+  user_id    String
+  action     String   // post_created, post_approved, post_rejected, post_scheduled, post_published, post_failed, comment_added, member_invited, member_removed, settings_updated
+  entity_type String? // post, campaign, comment, member, workspace
+  entity_id  String?
+  metadata   Json     @default("{}")
+  created_at DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([workspace_id, created_at(sort: Desc)])
+  @@index([workspace_id, action])
 }

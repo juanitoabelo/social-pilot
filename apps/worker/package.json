@@ -17,6 +17,8 @@
     "dotenv": "^16.4.7",
     "ioredis": "^5.4.2",
     "openai": "^4.77.0",
+    "resend": "^4.7.0",
+    "@sentry/node": "^8.55.0",
     "sharp": "^0.33.5"
   },
   "devDependencies": {

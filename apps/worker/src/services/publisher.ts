@@ -25,6 +25,8 @@ export async function publishPost(payload: PublishPayload): Promise<PublishResul
       return publishToInstagram(payload);
     case "facebook":
       return publishToFacebook(payload);
+    case "twitter":
+      return publishToTwitter(payload);
     default:
       throw new Error(`Platform ${payload.platform} not yet supported`);
   }
@@ -184,4 +186,161 @@ async function parseMetaError(response: Response): Promise<Error> {
       : response.statusText;
 
   return new Error(`Platform API error (${status}): ${message}`);
+}
+
+async function publishToTwitter(payload: PublishPayload): Promise<PublishResult> {
+  const accessToken = getDecryptedToken(payload.accessToken);
+  const fullCaption = buildTwitterCaption(payload.caption, payload.hashtags);
+
+  const mediaId = payload.assetUrls[0]
+    ? await uploadMediaToTwitter(payload.assetUrls[0], accessToken)
+    : null;
+
+  const tweetId = await createTweet(fullCaption, mediaId, accessToken);
+
+  return {
+    platform_post_id: tweetId,
+    url: `https://twitter.com/i/web/status/${tweetId}`,
+  };
+}
+
+function buildTwitterCaption(caption: string, hashtags: string[]): string {
+  const tags = hashtags
+    .map((tag) => (tag.startsWith("#") ? tag : `#${tag}`))
+    .slice(0, 3)
+    .join(" ");
+  const combined = tags ? `${caption}\n\n${tags}` : caption;
+  return combined.length > 280 ? `${combined.slice(0, 277)}...` : combined;
+}
+
+async function uploadMediaToTwitter(
+  imageUrl: string,
+  bearerToken: string
+): Promise<string> {
+  const imageResponse = await fetch(imageUrl);
+  if (!imageResponse.ok) {
+    throw new Error(`Failed to fetch image from ${imageUrl}`);
+  }
+  const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
+
+  const initResponse = await fetch("https://upload.twitter.com/1.1/media/upload.json", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${bearerToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      command: "INIT",
+      media_type: "image/jpeg",
+      total_bytes: imageBuffer.length,
+    }),
+  });
+
+  if (!initResponse.ok) {
+    const error = await parseTwitterError(initResponse);
+    throw error;
+  }
+
+  const initData = (await initResponse.json()) as { media_id_string: string };
+  const mediaId = initData.media_id_string;
+
+  const chunkSize = 5 * 1024 * 1024;
+  let segmentIndex = 0;
+  for (let offset = 0; offset < imageBuffer.length; offset += chunkSize) {
+    const chunk = imageBuffer.slice(offset, offset + chunkSize);
+    const formData = new FormData();
+    formData.append("command", "APPEND");
+    formData.append("media_id", mediaId);
+    formData.append("segment_index", String(segmentIndex));
+    formData.append("media", new Blob([chunk]), "image.jpg");
+
+    const appendResponse = await fetch("https://upload.twitter.com/1.1/media/upload.json", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${bearerToken}`,
+      },
+      body: formData,
+    });
+
+    if (!appendResponse.ok) {
+      throw new Error(`Failed to upload media chunk ${segmentIndex}`);
+    }
+    segmentIndex++;
+  }
+
+  const finalizeResponse = await fetch(
+    `https://upload.twitter.com/1.1/media/upload.json?command=FINALIZE&media_id=${mediaId}`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${bearerToken}`,
+      },
+    }
+  );
+
+  if (!finalizeResponse.ok) {
+    throw new Error("Failed to finalize media upload");
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+
+  return mediaId;
+}
+
+async function createTweet(
+  text: string,
+  mediaId: string | null,
+  bearerToken: string
+): Promise<string> {
+  const body: Record<string, unknown> = { text };
+  if (mediaId) {
+    body.media = { media_ids: [mediaId] };
+  }
+
+  const response = await fetch("https://api.twitter.com/2/tweets", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${bearerToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const error = await parseTwitterError(response);
+    throw error;
+  }
+
+  const data = (await response.json()) as { data: { id: string } };
+  return data.data.id;
+}
+
+async function parseTwitterError(response: Response): Promise<Error> {
+  let errorBody: unknown;
+  try {
+    errorBody = await response.json();
+  } catch {
+    errorBody = null;
+  }
+
+  const status = response.status;
+
+  if (status === 401 || status === 403) {
+    return new AuthError("X/Twitter authentication failed — token may be expired or revoked");
+  }
+
+  if (status === 429) {
+    return new RateLimitError("X/Twitter rate limit exceeded", 900000);
+  }
+
+  const errors =
+    typeof errorBody === "object" && errorBody !== null && "errors" in errorBody
+      ? (errorBody as Record<string, unknown>).errors
+      : null;
+
+  const message = Array.isArray(errors)
+    ? (errors[0] as Record<string, unknown>)?.message?.toString() || response.statusText
+    : response.statusText;
+
+  return new Error(`X/Twitter API error (${status}): ${message}`);
 }

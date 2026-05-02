@@ -1,8 +1,10 @@
 import "./setup";
+import "./sentry";
 import { startContentWorker, createContentQueue } from "./queues/content-worker";
 import { startScheduledPostsWorker, createScheduledPostsQueue } from "./queues/scheduled-posts";
 import { startTokenRefreshWorker, createTokenRefreshQueue, scheduleTokenRefreshChecks } from "./queues/token-refresh";
-import { startMetricsFetchWorker, createMetricsFetchQueue } from "./queues/metrics-fetch";
+import { startMetricsFetchWorker, createMetricsFetchQueue, scheduleMetricsCron } from "./queues/metrics-fetch";
+import { startNotificationsWorker, createNotificationsQueue, scheduleWeeklyDigests, schedulePlanLimitChecks } from "./queues/notifications";
 
 console.log("[Worker] NODE_ENV:", process.env.NODE_ENV);
 console.log("[Worker] REDIS_URL:", process.env.REDIS_URL ? "SET" : "NOT SET");
@@ -15,6 +17,7 @@ const queues = [
   createScheduledPostsQueue(),
   createTokenRefreshQueue(),
   createMetricsFetchQueue(),
+  createNotificationsQueue(),
 ];
 
 let workers: (
@@ -22,6 +25,7 @@ let workers: (
   | Awaited<ReturnType<typeof startScheduledPostsWorker>>
   | Awaited<ReturnType<typeof startTokenRefreshWorker>>
   | Awaited<ReturnType<typeof startMetricsFetchWorker>>
+  | Awaited<ReturnType<typeof startNotificationsWorker>>
 )[] = [];
 
 async function startup() {
@@ -45,6 +49,19 @@ async function startup() {
 
   await scheduleTokenRefreshChecks();
   console.log("[Worker] Token refresh checks scheduled.");
+
+  await scheduleMetricsCron();
+  console.log("[Worker] Metrics cron scheduled.");
+
+  const notificationsWorker = await startNotificationsWorker();
+  workers.push(notificationsWorker);
+  console.log("[Worker] Notifications worker running.");
+
+  await scheduleWeeklyDigests();
+  console.log("[Worker] Weekly digests scheduled.");
+
+  await schedulePlanLimitChecks();
+  console.log("[Worker] Plan limit checks scheduled.");
 }
 
 async function shutdown(signal: string) {

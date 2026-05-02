@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
@@ -32,6 +33,10 @@ export default async function DashboardPage() {
 
   if (!user) {
     return null;
+  }
+
+  if (user.workspaces.length === 0) {
+    redirect("/dashboard/onboarding");
   }
 
   const workspace = user.workspaces[0]?.workspace;

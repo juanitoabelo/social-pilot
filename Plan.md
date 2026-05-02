@@ -775,16 +775,29 @@ async function buildPerformanceContext(workspaceId: string): Promise<string> {
 These features are intentionally excluded from the MVP. Build after launch with real user feedback.
 
 ### Video / Reel builder
-- FFmpeg worker for video composition
-- ElevenLabs / OpenAI TTS for voiceover
-- Pexels/Pixabay API for stock footage
-- Remotion for React-based video templates
-- Target: TikTok, Instagram Reels, YouTube Shorts
+- ✅ `generateVideo()` service — composes video from image + OpenAI TTS voiceover + text overlay
+- ✅ `tts.ts` — OpenAI TTS-1 with voice selection by brand tone (professional→onyx, casual→alloy, etc.)
+- ✅ `video-composer.ts` — FFmpeg-based composition with scale/pad, text overlay (drawtext), audio muxing
+- ✅ Video template registry (`video-templates/registry.ts`) — quote-card, hook-reveal, slide-show
+- ✅ Platform-specific aspect ratios (9:16 for reels, 16:9 for landscape, 4:5 for feed)
+- ✅ Content worker routes to video generation when `generate_video` flag is set on campaign
+- ✅ `generate_video` Boolean field on Campaign model
+- ✅ Video assets stored as `type: "video"` in Asset model, MP4 format
+- ✅ Campaign detail page shows video player with poster image when video asset exists
+- ✅ Campaign creation API accepts `generateVideo` flag
+- ⚠️ FFmpeg must be installed on worker server (Railway/Docker)
+- ⚠️ Requires `OPENAI_API_KEY` for TTS (separate from DALL·E usage)
 
 ### X / Twitter publisher
-- Apply for API access on week 1 of the project
-- Basic plan required ($100/mo) for write access
-- 50 posts/day limit on Basic — track in Redis
+- ✅ OAuth 2.0 PKCE flow — `/api/platforms/twitter/connect` + `/callback`
+- ✅ Token exchange with code verifier/challenge (S256)
+- ✅ Media upload via chunked upload API (INIT → APPEND → FINALIZE)
+- ✅ Tweet creation via X API v2 (`POST /2/tweets`) with optional media attachment
+- ✅ Caption truncation to 280 chars with hashtag limit (max 3)
+- ✅ Encrypted token storage (AES-256-GCM) with refresh token support
+- ✅ Rate limit handling (429 → retryable, 900s backoff)
+- ✅ Settings UI — X/Twitter added to platform connections list
+- ⚠️ Requires X API Basic plan ($100/mo) for write access, 50 posts/day limit
 
 ### TikTok publisher
 - Apply for Content Posting API access on week 1
@@ -795,16 +808,27 @@ These features are intentionally excluded from the MVP. Build after launch with 
 - After 20+ published posts: run SQL to find peak engagement by day + hour
 - Show optimal slots highlighted in calendar
 - One-click "schedule at best time" button
+- ✅ Built: `/api/analytics/optimal-times` endpoint, industry defaults fallback
+- ✅ Integrated into schedule page modal and campaign scheduling modal
+- ✅ Analytics dashboard shows "Best Posting Times" section
+- ✅ "Schedule at best time" auto-selects next optimal slot
 
 ### AI content variations (A/B testing)
 - Generate 2–3 variants per platform
 - User picks one or auto-post and auto-pause the loser
 - Feed results back to AI
+- ✅ Built: `variant_label` (A/B/C) + `is_variant_winner` fields on Post, `variant_count` on Campaign
+- ✅ `generateVariants()` service — generates 3 distinct creative angles (benefit-focused, story-driven, question/hook)
+- ✅ Content worker generates variants in parallel when variantCount > 1
+- ✅ Campaign detail page shows variants side-by-side in grid with labels, approach descriptions
+- ✅ Winner tracking via `is_variant_winner` field for future performance-based selection
 
 ### Team collaboration
-- Comments on posts in review
-- Approval workflows (member creates → admin approves)
-- Activity log per workspace
+- ✅ Comments on posts — `Comment` model with user/post relations, inline comments panel per post
+- ✅ Approval workflows — approve/reject actions with activity logging, role-aware access control
+- ✅ Activity log — `ActivityLog` model tracking all workspace actions (approvals, rejections, scheduling, comments, etc.)
+- ✅ Activity log page — `/dashboard/activity-log` with action-specific icons, relative timestamps, user attribution
+- ✅ Sidebar nav item — "Activity Log" added to dashboard navigation
 
 ### White-label / agency features
 - Custom domain for client-facing reports

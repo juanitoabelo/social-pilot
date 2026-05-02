@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { title, brief, tone, audience, platforms, useBrandConfig } = body;
+    const { title, brief, tone, audience, platforms, useBrandConfig, variantCount, generateVideo } = body;
 
     if (!title || !title.trim()) {
       return NextResponse.json(
@@ -97,6 +97,8 @@ export async function POST(request: NextRequest) {
         audience: audience || {},
         platforms: platforms || [],
         status: "draft",
+        variant_count: variantCount || 1,
+        generate_video: generateVideo || false,
         created_by: user.id,
       },
     });

@@ -3,6 +3,7 @@ import { redis } from "../lib/redis";
 import { prisma } from "../lib/prisma";
 import { publishPost } from "../services/publisher";
 import { scheduleMetricsFetchForPost } from "./metrics-fetch";
+import { notifyPostPublished, notifyPostFailed } from "../services/email";
 
 export const SCHEDULED_POSTS_QUEUE = "scheduled-posts";
 
@@ -143,6 +144,18 @@ async function processPublishJob(
     await scheduleMetricsFetchForPost(postId);
     console.log(`[PublisherWorker] Metrics fetch scheduled for post ${postId}`);
 
+    const owner = await prisma.workspaceMember.findFirst({
+      where: { workspace_id: post.campaign.workspace_id, role: "owner" },
+      include: { user: { select: { email: true } } },
+    });
+    if (owner?.user.email) {
+      await notifyPostPublished(owner.user.email, {
+        platform: post.platform,
+        caption: post.caption,
+        publishedAt: new Date().toISOString(),
+      });
+    }
+
     return result;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
@@ -164,6 +177,19 @@ async function processPublishJob(
         updated_at: new Date(),
       },
     });
+
+    const owner = await prisma.workspaceMember.findFirst({
+      where: { workspace_id: post.campaign.workspace_id, role: "owner" },
+      include: { user: { select: { email: true } } },
+    });
+    if (owner?.user.email) {
+      await notifyPostFailed(owner.user.email, {
+        platform: post.platform,
+        caption: post.caption,
+        error: errorMessage,
+        retryUrl: `${process.env.NEXTAUTH_URL}/dashboard/schedule`,
+      });
+    }
 
     throw error;
   }

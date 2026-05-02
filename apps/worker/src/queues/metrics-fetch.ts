@@ -58,7 +58,7 @@ async function processMetricsJob(
           workspace: {
             include: {
               platform_connections: {
-                where: { platform: { equals: undefined } },
+                where: { platform: undefined },
               },
             },
           },
@@ -71,7 +71,9 @@ async function processMetricsJob(
   if (post.status !== "published") return { skipped: true, reason: "post not published" };
   if (!post.platform_post_id) return { skipped: true, reason: "no platform_post_id" };
 
-  const connection = post.campaign.workspace.platform_connections[0];
+  const connection = post.campaign.workspace.platform_connections.find(
+    (c) => c.platform === post.platform
+  );
   if (!connection) return { skipped: true, reason: "no platform connection" };
 
   const encryptionKey = process.env.ENCRYPTION_KEY;
@@ -248,4 +250,56 @@ export async function scheduleMetricsFetchForPost(
   );
 
   await queue.close();
+}
+
+export async function scheduleMetricsCron(): Promise<void> {
+  const interval = 6 * 60 * 60 * 1000;
+
+  const run = async () => {
+    console.log("[MetricsCron] Scanning for published posts needing metrics...");
+
+    const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
+
+    const posts = await prisma.post.findMany({
+      where: {
+        status: "published",
+        platform_post_id: { not: null },
+        published_at: { gte: sixtyDaysAgo },
+      },
+      select: { id: true, platform_post_id: true, published_at: true },
+    });
+
+    const queue = createMetricsFetchQueue();
+    let scheduled = 0;
+
+    for (const post of posts) {
+      const latestMetric = await prisma.postMetrics.findFirst({
+        where: { post_id: post.id },
+        orderBy: { fetched_at: "desc" },
+        select: { fetched_at: true },
+      });
+
+      const needsFetch =
+        !latestMetric ||
+        Date.now() - latestMetric.fetched_at.getTime() > 6 * 60 * 60 * 1000;
+
+      if (needsFetch) {
+        await queue.add(
+          `metrics-cron-${post.id}`,
+          { postId: post.id },
+          {
+            jobId: `metrics-cron-${post.id}-${Date.now()}`,
+            removeOnComplete: true,
+          }
+        );
+        scheduled++;
+      }
+    }
+
+    await queue.close();
+    console.log(`[MetricsCron] Scheduled ${scheduled} metrics fetches for ${posts.length} published posts`);
+  };
+
+  run();
+  setInterval(run, interval);
 }

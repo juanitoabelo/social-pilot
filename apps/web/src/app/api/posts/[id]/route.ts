@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { Queue } from "bullmq";
 import { getRedis } from "@/lib/redis-client";
+import { logActivity } from "@/lib/activity-log";
 
 const SCHEDULED_POSTS_QUEUE = "scheduled-posts";
 
@@ -35,7 +36,7 @@ async function verifyPostAccess(postId: string, userEmail: string) {
     },
   });
 
-  return { post, user };
+  return { post, user, workspaceIds };
 }
 
 async function getQueue(): Promise<Queue> {
@@ -83,7 +84,7 @@ export async function POST(
         );
       }
 
-      const { post } = await verifyPostAccess(params.id, session.user.email) || {};
+      const { post, user } = await verifyPostAccess(params.id, session.user.email) || {};
 
       if (!post) {
         return NextResponse.json(
@@ -132,12 +133,21 @@ export async function POST(
         include: { assets: true },
       });
 
+      await logActivity({
+        workspace_id: post.campaign.workspace_id,
+        user_id: user!.id,
+        action: "post_scheduled",
+        entity_type: "post",
+        entity_id: params.id,
+        metadata: { platform: post.platform, scheduled_at: scheduleDate.toISOString() },
+      });
+
       await queue.close();
       return NextResponse.json({ data: updated, error: null });
     }
 
     if (action === "approve") {
-      const { post } = await verifyPostAccess(params.id, session.user.email) || {};
+      const { post, user } = await verifyPostAccess(params.id, session.user.email) || {};
 
       if (!post) {
         return NextResponse.json(
@@ -151,11 +161,21 @@ export async function POST(
         data: { status: "approved" },
         include: { assets: true },
       });
+
+      await logActivity({
+        workspace_id: post.campaign.workspace_id,
+        user_id: user!.id,
+        action: "post_approved",
+        entity_type: "post",
+        entity_id: params.id,
+        metadata: { platform: post.platform, variant_label: post.variant_label },
+      });
+
       return NextResponse.json({ data: updated, error: null });
     }
 
     if (action === "reject") {
-      const { post } = await verifyPostAccess(params.id, session.user.email) || {};
+      const { post, user } = await verifyPostAccess(params.id, session.user.email) || {};
 
       if (!post) {
         return NextResponse.json(
@@ -163,6 +183,15 @@ export async function POST(
           { status: 404 }
         );
       }
+
+      await logActivity({
+        workspace_id: post.campaign.workspace_id,
+        user_id: user!.id,
+        action: "post_rejected",
+        entity_type: "post",
+        entity_id: params.id,
+        metadata: { platform: post.platform, variant_label: post.variant_label },
+      });
 
       await prisma.post.delete({
         where: { id: params.id },

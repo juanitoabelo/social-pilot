@@ -10,6 +10,7 @@ export async function generateCopy(params: {
   platform: string;
   audience: Record<string, unknown>;
   brandConfig: Record<string, unknown>;
+  performanceContext?: string;
 }): Promise<{
   caption: string;
   hashtags: string[];
@@ -25,6 +26,8 @@ export async function generateCopy(params: {
   const emojiPolicy = (params.brandConfig.emoji_policy as string) || "optional";
   const charLimit = (PLATFORM_LIMITS as Record<string, { caption: number }>)[params.platform]?.caption ?? 2200;
 
+  const performanceContext = params.performanceContext || "";
+
   const systemPrompt = `You are an expert social media copywriter for ${brandName}.
 
 Your tone is: ${tone}.
@@ -34,6 +37,7 @@ ${doRules.length > 0 ? "DO: " + doRules.join(", ") : ""}
 ${dontRules.length > 0 ? "DO NOT: " + dontRules.join(", ") : ""}
 Hashtag style: ${hashtagStyle === "lowercase" ? "all lowercase" : hashtagStyle === "camelcase" ? "CamelCase" : "no hashtags"}
 Emoji policy: ${emojiPolicy === "required" ? "Use 1-3 emojis in every post" : emojiPolicy === "none" ? "Do NOT use any emojis" : "Use emojis sparingly, max 1-2"}
+${performanceContext}
 
 CRITICAL: Respond with ONLY valid JSON. No markdown, no explanation, no preamble.
 The response must parse as JSON with these exact keys: caption, hashtags, cta, alt_text, image_prompt_hint`;
@@ -120,4 +124,107 @@ Respond with ONLY the image prompt text. Nothing else.`;
   });
 
   return response.content[0].type === "text" ? response.content[0].text.trim() : "";
+}
+
+export async function generateVariants(params: {
+  brief: string;
+  platform: string;
+  audience: Record<string, unknown>;
+  brandConfig: Record<string, unknown>;
+  variantCount: number;
+  performanceContext?: string;
+}): Promise<
+  Array<{
+    caption: string;
+    hashtags: string[];
+    cta: string;
+    alt_text: string;
+    image_prompt_hint: string;
+    variant_label: string;
+  }>
+> {
+  const brandName = (params.brandConfig.brand_name as string) || "your brand";
+  const tone = (params.brandConfig.tone as string) || "professional";
+  const doRules = Array.isArray(params.brandConfig.do) ? (params.brandConfig.do as string[]) : [];
+  const dontRules = Array.isArray(params.brandConfig.dont) ? (params.brandConfig.dont as string[]) : [];
+  const hashtagStyle = (params.brandConfig.hashtag_style as string) || "lowercase";
+  const emojiPolicy = (params.brandConfig.emoji_policy as string) || "optional";
+  const charLimit = (PLATFORM_LIMITS as Record<string, { caption: number }>)[params.platform]?.caption ?? 2200;
+  const performanceContext = params.performanceContext || "";
+  const variantCount = Math.min(params.variantCount, 3);
+  const variantLabels = ["A", "B", "C"];
+
+  const variantAngles = [
+    "Direct and benefit-focused — lead with the primary value proposition",
+    "Story-driven — start with a relatable scenario or mini-narrative",
+    "Question or hook-based — open with a compelling question or surprising statement",
+  ];
+
+  const systemPrompt = `You are an expert social media copywriter for ${brandName}.
+
+Your tone is: ${tone}.
+
+Brand rules you MUST follow:
+${doRules.length > 0 ? "DO: " + doRules.join(", ") : ""}
+${dontRules.length > 0 ? "DO NOT: " + dontRules.join(", ") : ""}
+Hashtag style: ${hashtagStyle === "lowercase" ? "all lowercase" : hashtagStyle === "camelcase" ? "CamelCase" : "no hashtags"}
+Emoji policy: ${emojiPolicy === "required" ? "Use 1-3 emojis in every post" : emojiPolicy === "none" ? "Do NOT use any emojis" : "Use emojis sparingly, max 1-2"}
+${performanceContext}
+
+You will generate ${variantCount} distinct variants for a ${params.platform} post. Each variant should take a DIFFERENT creative approach while staying on-brand.
+
+CRITICAL: Respond with ONLY valid JSON. No markdown, no explanation, no preamble.
+The response must be a JSON array with exactly ${variantCount} objects.`;
+
+  const userPrompt = `Create ${variantCount} variants of a ${params.platform} post for this campaign:
+
+Campaign brief: ${params.brief}
+Target audience: ${JSON.stringify(params.audience)}
+Character limit: ${charLimit}
+
+Each variant should use a different approach:
+${variantAngles.slice(0, variantCount).map((angle, i) => `- Variant ${variantLabels[i]}: ${angle}`).join("\n")}
+
+Required JSON structure:
+[
+  {
+    "variant_label": "A",
+    "caption": "Full post caption text (${charLimit} chars max)",
+    "hashtags": ["5-10 relevant hashtags in ${hashtagStyle} format"],
+    "cta": "Short call-to-action (under 30 chars)",
+    "alt_text": "Descriptive alt text for accessibility (under 125 chars)",
+    "image_prompt_hint": "1-2 sentence description of the ideal image"
+  },
+  {
+    "variant_label": "B",
+    ...
+  }
+]`;
+
+  const response = await anthropic.messages.create({
+    model: "claude-sonnet-4-5-20250514",
+    max_tokens: 2048,
+    system: systemPrompt,
+    messages: [
+      { role: "user", content: userPrompt },
+    ],
+  });
+
+  const text = response.content[0].type === "text" ? response.content[0].text : "";
+
+  try {
+    const jsonStr = text.replace(/^```json\s*|\s*```$/g, "").trim();
+    const parsed = JSON.parse(jsonStr) as Array<Record<string, unknown>>;
+
+    return parsed.slice(0, variantCount).map((item, index) => ({
+      variant_label: item.variant_label as string || variantLabels[index],
+      caption: (item.caption as string) ?? "",
+      hashtags: Array.isArray(item.hashtags) ? item.hashtags : [],
+      cta: (item.cta as string) ?? "",
+      alt_text: (item.alt_text as string) ?? "",
+      image_prompt_hint: (item.image_prompt_hint as string) ?? "",
+    }));
+  } catch {
+    throw new Error(`Failed to parse Claude variant response as JSON: ${text.slice(0, 200)}`);
+  }
 }

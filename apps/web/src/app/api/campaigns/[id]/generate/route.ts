@@ -83,6 +83,8 @@ export async function POST(
       platforms: campaign.platforms,
       audience: campaign.audience,
       brandConfig: workspace?.brand_config,
+      variantCount: (campaign as { variant_count?: number }).variant_count ?? 1,
+      generateVideo: (campaign as { generate_video?: boolean }).generate_video ?? false,
     });
 
     await connection.quit();

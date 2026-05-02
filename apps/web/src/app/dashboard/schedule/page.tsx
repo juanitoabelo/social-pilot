@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import type { EventClickArg, EventDropArg, DateSelectArg } from '@fullcalendar/core';
-import { Calendar, Clock, Plus, X, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Calendar, Clock, Plus, X, Loader2, CheckCircle2, AlertCircle, Sparkles, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface Post {
@@ -25,12 +25,78 @@ interface Post {
   created_at: string;
 }
 
+interface OptimalTimeSlot {
+  dayOfWeek: number;
+  dayName: string;
+  hour: number;
+  timeLabel: string;
+  avgEngagementRate: number;
+  postCount: number;
+  platform: string;
+  isEstimate?: boolean;
+}
+
+interface PlatformOptimalTimes {
+  platform: string;
+  slots: OptimalTimeSlot[];
+  overallBestSlot: OptimalTimeSlot | null;
+}
+
 async function fetchScheduledPosts(): Promise<Post[]> {
   const res = await fetch('/api/posts?status=scheduled');
   if (!res.ok) throw new Error('Failed to fetch scheduled posts');
   const data = await res.json();
   if (data.error) throw new Error(data.error.message);
   return data.data || [];
+}
+
+async function fetchOptimalTimes(platform?: string): Promise<PlatformOptimalTimes[]> {
+  const params = platform ? `?platform=${platform}` : '';
+  const res = await fetch(`/api/analytics/optimal-times${params}`);
+  if (!res.ok) throw new Error('Failed to fetch optimal times');
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message);
+  return data.data || [];
+}
+
+function getNextOptimalTime(
+  slots: OptimalTimeSlot[]
+): Date | null {
+  if (!slots.length) return null;
+
+  const now = new Date();
+  const currentDay = now.getDay();
+  const currentHour = now.getHours();
+
+  for (const slot of slots) {
+    if (slot.isEstimate) continue;
+
+    let daysUntilDay = slot.dayOfWeek - currentDay;
+    if (daysUntilDay < 0 || (daysUntilDay === 0 && slot.hour <= currentHour)) {
+      daysUntilDay += 7;
+    }
+
+    const candidate = new Date(now);
+    candidate.setDate(candidate.getDate() + daysUntilDay);
+    candidate.setHours(slot.hour, 0, 0, 0);
+
+    if (candidate > now) {
+      return candidate;
+    }
+  }
+
+  const best = slots[0];
+  if (!best) return null;
+
+  let daysUntilDay = best.dayOfWeek - currentDay;
+  if (daysUntilDay < 0) daysUntilDay += 7;
+  if (daysUntilDay === 0 && best.hour <= currentHour) daysUntilDay += 7;
+
+  const candidate = new Date(now);
+  candidate.setDate(candidate.getDate() + daysUntilDay);
+  candidate.setHours(best.hour, 0, 0, 0);
+
+  return candidate;
 }
 
 async function schedulePost(postId: string, scheduledAt: string) {
@@ -102,6 +168,24 @@ export default function SchedulePage() {
       return data.data || [];
     },
   });
+
+  const { data: optimalTimes } = useQuery({
+    queryKey: ['optimal-posting-times', selectedPost?.platform],
+    queryFn: () => fetchOptimalTimes(selectedPost?.platform),
+    enabled: showModal && !!selectedPost,
+  });
+
+  const bestTimeForSelected = useMemo(() => {
+    if (!optimalTimes || !selectedPost) return null;
+    const platformData = optimalTimes.find((p) => p.platform === selectedPost.platform);
+    if (!platformData) return null;
+    return getNextOptimalTime(platformData.slots);
+  }, [optimalTimes, selectedPost]);
+
+  const platformDataForSelected = useMemo(() => {
+    if (!optimalTimes || !selectedPost) return null;
+    return optimalTimes.find((p) => p.platform === selectedPost.platform);
+  }, [optimalTimes, selectedPost]);
 
   const scheduleMutation = useMutation({
     mutationFn: ({ postId, date }: { postId: string; date: string }) =>
@@ -194,6 +278,15 @@ export default function SchedulePage() {
     setSelectedPost(null);
   };
 
+  const handleUseBestTime = () => {
+    if (!bestTimeForSelected) {
+      toast.info('No optimal time data available yet. Publish more posts to get personalized suggestions.');
+      return;
+    }
+    setScheduleDate(formatDate(bestTimeForSelected));
+    toast.success('Best posting time selected');
+  };
+
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center py-20">
@@ -272,6 +365,64 @@ export default function SchedulePage() {
               <p className="text-sm text-gray-600 line-clamp-2">{selectedPost.caption}</p>
               <p className="text-xs text-gray-400 mt-1">{selectedPost.campaign.title}</p>
             </div>
+
+            {platformDataForSelected && (
+              <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <div className="flex items-center gap-2 mb-2">
+                  <Sparkles className="w-4 h-4 text-amber-600" />
+                  <span className="text-sm font-medium text-amber-800">Best posting times</span>
+                  {platformDataForSelected.overallBestSlot?.isEstimate && (
+                    <span className="text-xs text-amber-600 ml-auto">based on industry data</span>
+                  )}
+                </div>
+                <div className="grid grid-cols-5 gap-1.5">
+                  {platformDataForSelected.slots.slice(0, 5).map((slot, i) => {
+                    const date = new Date();
+                    const currentDay = date.getDay();
+                    let daysUntilDay = slot.dayOfWeek - currentDay;
+                    if (daysUntilDay < 0 || (daysUntilDay === 0 && slot.hour <= date.getHours())) {
+                      daysUntilDay += 7;
+                    }
+                    const slotDate = new Date(date);
+                    slotDate.setDate(slotDate.getDate() + daysUntilDay);
+                    slotDate.setHours(slot.hour, 0, 0, 0);
+
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => setScheduleDate(formatDate(slotDate))}
+                        className={`p-2 rounded text-xs text-center transition-colors ${
+                          slot.isEstimate
+                            ? 'bg-white border border-amber-200 text-amber-700 hover:bg-amber-100'
+                            : 'bg-amber-100 text-amber-800 hover:bg-amber-200'
+                        } ${
+                          scheduleDate === formatDate(slotDate)
+                            ? 'ring-2 ring-amber-500'
+                            : ''
+                        }`}
+                      >
+                        <div className="font-medium">{slot.dayName.slice(0, 3)}</div>
+                        <div>{slot.timeLabel}</div>
+                        {!slot.isEstimate && slot.postCount > 0 && (
+                          <div className="text-[10px] text-amber-600 mt-0.5">
+                            {(slot.avgEngagementRate * 100).toFixed(1)}%
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+                {bestTimeForSelected && (
+                  <button
+                    onClick={handleUseBestTime}
+                    className="mt-2 w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-800 bg-amber-100 rounded hover:bg-amber-200 transition-colors"
+                  >
+                    <Zap className="w-3 h-3" />
+                    Schedule at best time ({bestTimeForSelected.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} at {bestTimeForSelected.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })})
+                  </button>
+                )}
+              </div>
+            )}
 
             <div className="mb-4">
               <label className="block text-sm font-medium mb-1">Date & Time</label>
