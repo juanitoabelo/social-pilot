@@ -1,4 +1,5 @@
-import { redirect, cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { jwtVerify } from "jose";
 import { prisma } from "@/lib/db";
 import { Sidebar } from "@/components/dashboard/sidebar";
