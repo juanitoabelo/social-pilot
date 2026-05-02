@@ -11,10 +11,12 @@ export default function RegisterPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setError("");
     
     try {
       const res = await fetch("/api/register", {
@@ -27,11 +29,10 @@ export default function RegisterPage() {
         router.push("/login?registered=true");
       } else {
         const data = await res.json();
-        alert(data.error || "Registration failed");
+        setError(data.error || "Registration failed");
       }
-    } catch (error) {
-      console.error(error);
-      alert("Something went wrong");
+    } catch {
+      setError("Something went wrong");
     } finally {
       setIsLoading(false);
     }
@@ -51,6 +52,12 @@ export default function RegisterPage() {
 
         <div className="bg-white rounded-xl border p-8">
           <h1 className="text-2xl font-bold mb-6">Create your account</h1>
+          
+          {error && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
+              {error}
+            </div>
+          )}
           
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
